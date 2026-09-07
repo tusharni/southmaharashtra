@@ -64,6 +64,11 @@
   .band-btn .cnt{background:rgba(0,0,0,.08); border-radius:10px; padding:1px 7px; font-size:11.5px;}
   .band-btn.active .cnt{background:rgba(255,255,255,.28); color:#fff;}
   .filter-group{margin-bottom:18px;}
+  .metric-toggle{display:flex; border:1px solid var(--line); border-radius:6px; overflow:hidden;}
+  .metric-btn{flex:1; padding:7px 0; border:none; background:#fff; color:var(--charcoal-2); font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;}
+  .metric-btn + .metric-btn{border-left:1px solid var(--line);}
+  .metric-btn.active{background:var(--saffron); color:#fff;}
+  .metric-btn:hover:not(.active){background:var(--cream-2);}
   select, input[type=text]{
     width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px;
     background:#fff; font-size:12.5px; color:var(--charcoal); font-family:inherit;
@@ -165,22 +170,23 @@
 <header>
   <h1>South Maharashtra &mdash; ALC Performance Explorer</h1>
   <p>565 currently-active ALCs across Kolhapur, Sangli &amp; Satara. Every year's MS-CIT and KLiC figures sit directly in the table below. Click a row to open its full profile.</p>
+  <p id="liveStatus" style="margin-top:8px; font-size:11.5px; color:#C9BFAE;">Loading live 2026 MS-CIT and KLiC data&hellip;</p>
 </header>
 
 <div class="wrap">
   <div class="sidebar">
     <div class="filter-group">
-      <h3>KLiC 2026 admissions band</h3>
-      <div id="bandButtons"></div>
+      <h3>DCU</h3>
+      <div id="dcuButtons" class="metric-toggle" style="flex-wrap:wrap;"></div>
     </div>
     <div class="filter-group">
-      <h3>DCU</h3>
-      <select id="dcuFilter">
-        <option value="">All DCUs</option>
-        <option value="Kolhapur">Kolhapur</option>
-        <option value="Sangli">Sangli</option>
-        <option value="Satara">Satara</option>
-      </select>
+      <h3>Metric</h3>
+      <div id="metricToggle" class="metric-toggle"></div>
+      <div class="note" style="margin-top:8px;">KLiC-only ALCs cannot run MS-CIT, so they drop out of the MS-CIT view entirely (not shown as zero). MS-CIT ALCs can run KLiC, so they stay in the KLiC view even at zero.</div>
+    </div>
+    <div class="filter-group">
+      <h3 id="bandTitle">KLiC 2026 admissions band</h3>
+      <div id="bandButtons"></div>
     </div>
     <div class="filter-group">
       <h3>Program</h3>
@@ -212,7 +218,7 @@
             <th data-key="cat" rowspan="2">Category</th>
             <th data-key="prog" rowspan="2">Program</th>
             <th id="yearHeaders" colspan="9" style="text-align:center;">Admissions by year (MS-CIT / KLiC)</th>
-            <th data-key="band" rowspan="2">Band</th>
+            <th data-key="band" rowspan="2" id="bandColHeader">Band</th>
           </tr>
           <tr class="year-row" id="yearSubRow"></tr>
         </thead>
@@ -286,6 +292,140 @@ const KLIC_MONTH_LABELS = DATA.klic_month_labels;
 const HM_YEARS = DATA.hm_years;
 const HM_MONTHS = DATA.hm_months;
 const ALCS = DATA.alcs;
+const ALCS_BY_CODE = {};
+ALCS.forEach(a=>{ ALCS_BY_CODE[a.code] = a; });
+
+const LIVE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS1I_PUqZZVh7c1iipT0am1DgxyPsLdrzZ4warW3z9o6oD29yAOO5OMkEBDQwpVal5wBztUFnmxtpf4/pub?gid=1252904265&single=true&output=csv';
+const LIVE_KLIC_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQHgld2KjpSBPnIH3A1pkRBXAxTpZsRyYeX3eOUl1STLHawGpmY9IJKzk2tXyWPHDPZGno-co8xC15x/pub?gid=1692059545&single=true&output=csv';
+// Live sheet event-column order matches MSCIT_EVENT_LABELS: Apr, Jun, Jul, Aug, Oct, Dec, Feb(next year)
+const LIVE_EVENT_COLS = [
+  'MS-CIT April 2026 Exam Event','MS-CIT June 2026 Exam Event','MS-CIT July 2026 Exam Event',
+  'MS-CIT August 2026 Exam Event','MS-CIT October 2026 Exam Event','MS-CIT December 2026 Exam Event',
+  'MS-CIT February 2027 Exam Event'
+];
+// calendar-month index (0=Jan..11=Dec) for each event above, within the 2026 heatmap row. Feb 2027 falls outside the 2018-2026 grid so it's skipped there.
+const LIVE_EVENT_GRID_MONTH = [3,5,6,7,9,11,null];
+
+const LIVE_KLIC_MONTH_COLS = [
+  'KLiC January 2026','KLiC February 2026','KLiC March 2026','KLiC April 2026','KLiC May 2026','KLiC June 2026',
+  'KLiC July 2026','KLiC August 2026','KLiC September 2026','KLiC October 2026','KLiC November 2026','KLiC December 2026'
+];
+
+function parseCSV(text){
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c==='"'){
+        if(text[i+1]==='"'){ field+='"'; i++; } else { inQuotes=false; }
+      } else { field += c; }
+    } else {
+      if(c==='"'){ inQuotes = true; }
+      else if(c===','){ row.push(field); field=''; }
+      else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else if(c==='\r'){ /* skip */ }
+      else { field += c; }
+    }
+  }
+  if(field.length>0 || row.length>0){ row.push(field); rows.push(row); }
+  if(rows.length===0) return [];
+  const headers = rows[0].map(h=>h.trim());
+  return rows.slice(1).filter(r=>r.length>1).map(r=>{
+    const obj = {};
+    headers.forEach((h,i)=>{ obj[h] = (r[i]!==undefined ? r[i].trim() : ''); });
+    return obj;
+  });
+}
+
+function toNum(s){
+  if(s===undefined || s===null || s==='') return null;
+  const n = parseFloat(String(s).replace(/,/g,''));
+  return isNaN(n) ? null : n;
+}
+
+function applyLiveMscit(csvRows){
+  let matched = 0;
+  csvRows.forEach(r=>{
+    const code = (r['Center Code']||'').trim();
+    if(!code) return;
+    const a = ALCS_BY_CODE[code];
+    if(!a) return;
+    matched++;
+
+    const events = LIVE_EVENT_COLS.map(c=>toNum(r[c]));
+    a.mscit_events_26 = events;
+
+    const total = toNum(r['Total Admissions']);
+    a.mscit26 = total!==null ? total : events.reduce((s,v)=> s + (v||0), 0);
+
+    if(a.mscit_hist && a.mscit_grid && a.mscit_grid.length){
+      const lastRow = a.mscit_grid[a.mscit_grid.length-1];
+      LIVE_EVENT_GRID_MONTH.forEach((mIdx, i)=>{
+        if(mIdx!==null) lastRow[mIdx] = events[i];
+      });
+    }
+  });
+  return matched;
+}
+
+function applyLiveKlic(csvRows){
+  let matched = 0;
+  csvRows.forEach(r=>{
+    const code = (r['Center Code']||'').trim();
+    if(!code) return;
+    const a = ALCS_BY_CODE[code];
+    if(!a) return;
+    matched++;
+
+    const months = LIVE_KLIC_MONTH_COLS.map(c=>toNum(r[c]));
+    a.klic_months_26 = months;
+
+    const total = toNum(r['Total Admissions']);
+    a.klic26 = total!==null ? total : months.reduce((s,v)=> s + (v||0), 0);
+
+    if(a.klic_grid && a.klic_grid.length){
+      const lastRow = a.klic_grid[a.klic_grid.length-1];
+      months.forEach((v,i)=>{ lastRow[i] = v; });
+    }
+  });
+  return matched;
+}
+
+function loadLiveData(){
+  const statusEl = document.getElementById('liveStatus');
+  Promise.allSettled([
+    fetch(LIVE_CSV_URL).then(r=>{ if(!r.ok) throw new Error('MS-CIT sheet HTTP '+r.status); return r.text(); }),
+    fetch(LIVE_KLIC_CSV_URL).then(r=>{ if(!r.ok) throw new Error('KLiC sheet HTTP '+r.status); return r.text(); })
+  ]).then(results => {
+    const [mscitResult, klicResult] = results;
+    const parts = [];
+    let anyMatched = false;
+
+    if(mscitResult.status === 'fulfilled'){
+      const matched = applyLiveMscit(parseCSV(mscitResult.value));
+      parts.push('MS-CIT: ' + matched + ' ALCs matched');
+      anyMatched = true;
+    } else {
+      parts.push('MS-CIT live load failed (' + mscitResult.reason.message + ')');
+    }
+
+    if(klicResult.status === 'fulfilled'){
+      const matched = applyLiveKlic(parseCSV(klicResult.value));
+      parts.push('KLiC: ' + matched + ' ALCs matched');
+      anyMatched = true;
+    } else {
+      parts.push('KLiC live load failed (' + klicResult.reason.message + ')');
+    }
+
+    const stamp = new Date().toLocaleString();
+    statusEl.textContent = (anyMatched ? 'Live 2026 data loaded \u2014 ' : 'Live data unavailable, showing static snapshot \u2014 ') + parts.join(' \u00b7 ') + ' \u00b7 ' + stamp;
+
+    refresh();
+    if(state.selected) selectALC(state.selected);
+  });
+}
+
 
 const BAND_ORDER = ['0','1-5','6-10','11-20','21-40','41-60','61-80','81-100','>100'];
 
@@ -296,6 +436,18 @@ function bandClass(b){
   return 'chip-high';
 }
 function fmt(v){ return (v===null || v===undefined) ? '&ndash;' : v; }
+function bandOf(v){
+  v = v || 0;
+  if(v===0) return '0';
+  else if(v<=5) return '1-5';
+  else if(v<=10) return '6-10';
+  else if(v<=20) return '11-20';
+  else if(v<=40) return '21-40';
+  else if(v<=60) return '41-60';
+  else if(v<=80) return '61-80';
+  else if(v<=100) return '81-100';
+  else return '>100';
+}
 function hasAnyKlic(a){
   if(a.klic26!==null && a.klic26!==undefined) return true;
   if(a.klic_hist && a.klic_hist.some(v=>v!==null && v!==undefined)) return true;
@@ -303,7 +455,7 @@ function hasAnyKlic(a){
   return false;
 }
 
-let state = { band: null, dcu:'', prog:'', q:'', sortKey:'klic26', sortDir:-1, selected:null };
+let state = { metric: 'klic26', band: null, dcu:'', prog:'', q:'', sortKey:'klic26', sortDir:-1, selected:null };
 
 function renderYearHeader(){
   const row = document.getElementById('yearSubRow');
@@ -314,17 +466,53 @@ function renderYearHeader(){
 
 function bandCounts(){
   const c = {}; BAND_ORDER.forEach(b=>c[b]=0);
-  ALCS.forEach(a=>{ c[a.band] = (c[a.band]||0)+1; });
+  ALCS.forEach(a=>{ if(!eligibleForMetric(a)) return; const b = bandOf(a[state.metric]); c[b] = (c[b]||0)+1; });
   return c;
+}
+
+function renderMetricToggle(){
+  const wrap = document.getElementById('metricToggle');
+  const metrics = [{key:'klic26', label:'KLiC'}, {key:'mscit26', label:'MS-CIT'}];
+  wrap.innerHTML = metrics.map(m=>
+    `<button class="metric-btn${state.metric===m.key?' active':''}" data-metric="${m.key}">${m.label}</button>`
+  ).join('');
+  wrap.querySelectorAll('.metric-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      state.metric = btn.getAttribute('data-metric');
+      state.band = null;
+      state.sortKey = state.metric;
+      state.sortDir = -1;
+      refresh();
+    });
+  });
+}
+
+function renderDcuButtons(){
+  const wrap = document.getElementById('dcuButtons');
+  const dcus = ['', 'Kolhapur', 'Sangli', 'Satara'];
+  const counts = {};
+  dcus.forEach(d=>{ counts[d] = ALCS.filter(a=>eligibleForMetric(a) && (d==='' || a.dcu===d)).length; });
+  wrap.innerHTML = dcus.map(d=>
+    `<button class="metric-btn${state.dcu===d?' active':''}" data-dcu="${d}">${d===''?'All':d} <span style="opacity:.75;">(${counts[d]})</span></button>`
+  ).join('');
+  wrap.querySelectorAll('.metric-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      state.dcu = btn.getAttribute('data-dcu');
+      refresh();
+    });
+  });
 }
 
 function renderBandButtons(){
   const counts = bandCounts();
+  const eligibleCount = ALCS.filter(eligibleForMetric).length;
+  const metricLabel = state.metric==='klic26' ? 'KLiC' : 'MS-CIT';
+  document.getElementById('bandTitle').textContent = metricLabel + ' 2026 admissions band';
   const wrap = document.getElementById('bandButtons');
   wrap.innerHTML = '';
   const allBtn = document.createElement('div');
   allBtn.className = 'band-btn' + (state.band===null ? ' active':'');
-  allBtn.innerHTML = '<span>All ALCs</span><span class="cnt">'+ALCS.length+'</span>';
+  allBtn.innerHTML = '<span>All ALCs</span><span class="cnt">'+eligibleCount+'</span>';
   allBtn.onclick = ()=>{ state.band=null; refresh(); };
   wrap.appendChild(allBtn);
   BAND_ORDER.forEach(b=>{
@@ -336,9 +524,17 @@ function renderBandButtons(){
   });
 }
 
+function eligibleForMetric(a){
+  // KLiC-only ALCs structurally cannot run MS-CIT, so exclude them from the MS-CIT view entirely.
+  // MS-CIT ALCs (Program = 'MS-CIT' or 'MS-CIT + KLiC') CAN run KLiC, so nothing is excluded from the KLiC view.
+  if(state.metric==='mscit26' && a.prog==='KLiC only') return false;
+  return true;
+}
+
 function filtered(){
   return ALCS.filter(a=>{
-    if(state.band!==null && a.band!==state.band) return false;
+    if(!eligibleForMetric(a)) return false;
+    if(state.band!==null && bandOf(a[state.metric])!==state.band) return false;
     if(state.dcu && a.dcu!==state.dcu) return false;
     if(state.prog && a.prog!==state.prog) return false;
     if(state.q){
@@ -354,12 +550,13 @@ function renderSummary(list){
   const n = list.length;
   const avgKlic = n? (list.reduce((s,a)=>s+(a.klic26||0),0)/n).toFixed(1) : '0';
   const avgMscit = n? (list.reduce((s,a)=>s+(a.mscit26||0),0)/n).toFixed(1) : '0';
-  const zeroCount = list.filter(a=>a.band==='0' && a.prog!=='MS-CIT').length;
+  const zeroCount = list.filter(a=>bandOf(a[state.metric])==='0').length;
+  const metricLabel = state.metric==='klic26' ? 'KLiC' : 'MS-CIT';
   wrap.innerHTML = `
     <div class="stat-card"><div class="num">${n}</div><div class="lbl">ALCs in view</div></div>
     <div class="stat-card"><div class="num">${avgKlic}</div><div class="lbl">Avg KLiC 2026 (YTD)</div></div>
     <div class="stat-card"><div class="num">${avgMscit}</div><div class="lbl">Avg MS-CIT 2026 (YTD)</div></div>
-    <div class="stat-card"><div class="num">${zeroCount}</div><div class="lbl">True zero-KLiC (non MS-CIT-only)</div></div>
+    <div class="stat-card"><div class="num">${zeroCount}</div><div class="lbl">Zero ${metricLabel} admissions</div></div>
   `;
 }
 
@@ -404,7 +601,7 @@ function renderTable(){
       <td>${a.cat}</td>
       <td>${a.prog}</td>
       ${yearCellsHtml(a)}
-      <td><span class="band-chip ${bandClass(a.band)}">${a.band}</span></td>
+      <td><span class="band-chip ${bandClass(bandOf(a[state.metric]))}">${bandOf(a[state.metric])}</span></td>
     </tr>`;
   }).join('');
   document.querySelectorAll('#tableBody tr.row').forEach(tr=>{
@@ -413,6 +610,7 @@ function renderTable(){
   document.querySelectorAll('#alcTable thead th[data-key]').forEach(th=>{
     th.classList.toggle('sorted', th.getAttribute('data-key')===state.sortKey);
   });
+  document.getElementById('bandColHeader').textContent = (state.metric==='klic26'?'KLiC':'MS-CIT') + ' Band';
 }
 
 /* ---- Pure-SVG line chart (no external library needed) ---- */
@@ -575,7 +773,7 @@ function renderNearby(a){
     sameVillage.length + ' other active ALC' + (sameVillage.length===1?'':'s') + ' in the same village/area';
 
   function rowHtml(x, self){
-    return `<tr class="${self?'self-row':''}"><td>${x.name}${self?' (selected)':''}</td><td>${fmt(x.mscit26)}</td><td>${fmt(x.klic26)}</td><td><span class="band-chip ${bandClass(x.band)}">${x.band}</span></td></tr>`;
+    return `<tr class="${self?'self-row':''}"><td>${x.name}${self?' (selected)':''}</td><td>${fmt(x.mscit26)}</td><td>${fmt(x.klic26)}</td><td><span class="band-chip ${bandClass(bandOf(x[state.metric]))}">${bandOf(x[state.metric])}</span></td></tr>`;
   }
 
   let html = '';
@@ -588,7 +786,6 @@ function renderNearby(a){
   document.getElementById('nearbyTableWrap').innerHTML = html;
 }
 
-document.getElementById('dcuFilter').addEventListener('change', e=>{ state.dcu = e.target.value; refresh(); });
 document.getElementById('progFilter').addEventListener('change', e=>{ state.prog = e.target.value; refresh(); });
 document.getElementById('searchBox').addEventListener('input', e=>{ state.q = e.target.value; refresh(); });
 document.getElementById('closeDetail').addEventListener('click', closeModal);
@@ -607,12 +804,15 @@ document.querySelectorAll('#alcTable thead th[data-key]').forEach(th=>{
 });
 
 function refresh(){
+  renderDcuButtons();
+  renderMetricToggle();
   renderBandButtons();
   renderTable();
 }
 
 renderYearHeader();
 refresh();
+loadLiveData();
 </script>
 </body>
 </html>
