@@ -188,7 +188,7 @@
     </div>
     <div class="filter-group">
       <h3>Search by name / village</h3>
-      <input type="text" id="searchBox" placeholder="Center name or village...">
+      <input type="text" id="searchBox" placeholder="Center name, code, or village...">
     </div>
     <div class="filter-group">
       <h3 id="bandTitle">KLiC 2026 admissions band</h3>
@@ -215,6 +215,7 @@
       <table id="alcTable">
         <thead>
           <tr class="hdr-row">
+            <th data-key="code" rowspan="2">Code</th>
             <th class="sticky-col" data-key="name" rowspan="2">Center</th>
             <th data-key="dcu" rowspan="2">DCU</th>
             <th data-key="village" rowspan="2">Village</th>
@@ -543,7 +544,7 @@ function filtered(){
     if(state.prog && a.prog!==state.prog) return false;
     if(state.q){
       const q = state.q.toLowerCase();
-      if(a.name.toLowerCase().indexOf(q)===-1 && (a.village||'').toLowerCase().indexOf(q)===-1) return false;
+      if(a.name.toLowerCase().indexOf(q)===-1 && (a.village||'').toLowerCase().indexOf(q)===-1 && a.code.toLowerCase().indexOf(q)===-1) return false;
     }
     return true;
   });
@@ -592,12 +593,13 @@ function renderTable(){
   renderSummary(list);
   const body = document.getElementById('tableBody');
   if(list.length===0){
-    body.innerHTML = '<tr><td colspan="16"><div class="empty-state">No ALCs match this filter.</div></td></tr>';
+    body.innerHTML = '<tr><td colspan="17"><div class="empty-state">No ALCs match this filter.</div></td></tr>';
     return;
   }
   body.innerHTML = list.map(a=>{
     const sel = (state.selected===a.code) ? ' selected' : '';
     return `<tr class="row${sel}" data-code="${a.code}">
+      <td>${a.code}</td>
       <td class="sticky-col">${a.name}</td>
       <td>${a.dcu}</td>
       <td>${a.village||'&ndash;'}</td>
