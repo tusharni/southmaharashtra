@@ -900,11 +900,36 @@ async function authBoot(){
   const chip=document.getElementById('userChip');
   chip.innerHTML=`${aiEscapeSafe(profile.email)} <span class="role">${aiEscapeSafe(profile.role)}</span>`;
   window.currentUserRole=profile.role;
+  resetIdleTimer();
   dashboardInit();
 }
 
 sb.auth.onAuthStateChange((event)=>{if(event==='SIGNED_IN'||event==='SIGNED_OUT')authBoot()});
 window.addEventListener('load',authBoot);
+
+/* ── Idle timeout (skipped for admin) ────────────────────────────── */
+const IDLE_TIMEOUT_MS = 15*60*1000; // 15 minutes of inactivity
+let idleTimer = null;
+
+function idleLogout(){
+  authSignOut();
+}
+
+function resetIdleTimer(){
+  // Not signed in yet (login screen showing) - nothing to time out.
+  if(!window.currentUserRole) return;
+  // Admins are exempt from the idle timeout entirely.
+  if(window.currentUserRole === 'admin'){
+    if(idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
+    return;
+  }
+  if(idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(idleLogout, IDLE_TIMEOUT_MS);
+}
+
+['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(evt=>{
+  document.addEventListener(evt, resetIdleTimer, {passive:true});
+});
 </script>
 </body>
 </html>
