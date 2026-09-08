@@ -503,9 +503,22 @@ function renderYearHeader(){
   document.getElementById('yearHeaders').setAttribute('colspan', YEARS.length);
 }
 
+function filteredExceptBand(){
+  return ALCS.filter(a=>{
+    if(!eligibleForMetric(a)) return false;
+    if(state.dcu && a.dcu!==state.dcu) return false;
+    if(state.prog && a.prog!==state.prog) return false;
+    if(state.q){
+      const q = state.q.toLowerCase();
+      if(a.name.toLowerCase().indexOf(q)===-1 && (a.village||'').toLowerCase().indexOf(q)===-1 && a.code.toLowerCase().indexOf(q)===-1) return false;
+    }
+    return true;
+  });
+}
+
 function bandCounts(){
   const c = {}; BAND_ORDER.forEach(b=>c[b]=0);
-  ALCS.forEach(a=>{ if(!eligibleForMetric(a)) return; const b = bandOf(a[state.metric]); c[b] = (c[b]||0)+1; });
+  filteredExceptBand().forEach(a=>{ const b = bandOf(a[state.metric]); c[b] = (c[b]||0)+1; });
   return c;
 }
 
@@ -530,7 +543,18 @@ function renderDcuButtons(){
   const wrap = document.getElementById('dcuButtons');
   const dcus = ['', 'Kolhapur', 'Sangli', 'Satara'];
   const counts = {};
-  dcus.forEach(d=>{ counts[d] = ALCS.filter(a=>eligibleForMetric(a) && (d==='' || a.dcu===d)).length; });
+  dcus.forEach(d=>{
+    counts[d] = ALCS.filter(a=>{
+      if(!eligibleForMetric(a)) return false;
+      if(d!=='' && a.dcu!==d) return false;
+      if(state.prog && a.prog!==state.prog) return false;
+      if(state.q){
+        const q = state.q.toLowerCase();
+        if(a.name.toLowerCase().indexOf(q)===-1 && (a.village||'').toLowerCase().indexOf(q)===-1 && a.code.toLowerCase().indexOf(q)===-1) return false;
+      }
+      return true;
+    }).length;
+  });
   wrap.innerHTML = dcus.map(d=>
     `<button class="metric-btn${state.dcu===d?' active':''}" data-dcu="${d}">${d===''?'All':d} <span style="opacity:.75;">(${counts[d]})</span></button>`
   ).join('');
@@ -544,7 +568,7 @@ function renderDcuButtons(){
 
 function renderBandButtons(){
   const counts = bandCounts();
-  const eligibleCount = ALCS.filter(eligibleForMetric).length;
+  const eligibleCount = filteredExceptBand().length;
   const metricLabel = state.metric==='klic26' ? 'KLiC' : 'MS-CIT';
   document.getElementById('bandTitle').textContent = metricLabel + ' 2026 admissions band';
   const wrap = document.getElementById('bandButtons');
