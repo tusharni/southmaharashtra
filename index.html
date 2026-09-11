@@ -217,6 +217,12 @@
       <div id="dcuButtons" class="metric-toggle" style="flex-wrap:wrap;"></div>
     </div>
     <div class="filter-group">
+      <h3>SBU</h3>
+      <select id="sbuFilter">
+        <option value="">All SBUs</option>
+      </select>
+    </div>
+    <div class="filter-group">
       <h3>Metric</h3>
       <div id="metricToggle" class="metric-toggle"></div>
     </div>
@@ -252,6 +258,7 @@
             <th data-key="code" rowspan="2">Code</th>
             <th class="sticky-col" data-key="name" rowspan="2">Center</th>
             <th data-key="dcu" rowspan="2">DCU</th>
+            <th data-key="sbu" rowspan="2">SBU</th>
             <th data-key="village" rowspan="2">Village</th>
             <th data-key="taluka" rowspan="2">Taluka</th>
             <th data-key="cat" rowspan="2">Category</th>
@@ -392,6 +399,9 @@ function applyLiveMscit(csvRows){
     if(!a) return;
     matched++;
 
+    const sbu = (r['SBU Name']||'').trim();
+    if(sbu) a.sbu = sbu;
+
     const events = LIVE_EVENT_COLS.map(c=>toNum(r[c]));
     a.mscit_events_26 = events;
 
@@ -416,6 +426,9 @@ function applyLiveKlic(csvRows){
     const a = ALCS_BY_CODE[code];
     if(!a) return;
     matched++;
+
+    const sbu = (r['SBU Name']||'').trim();
+    if(sbu) a.sbu = sbu;
 
     const months = LIVE_KLIC_MONTH_COLS.map(c=>toNum(r[c]));
     a.klic_months_26 = months;
@@ -494,7 +507,7 @@ function hasAnyKlic(a){
   return false;
 }
 
-let state = { metric: 'klic26', band: null, dcu:'', prog:'', q:'', sortKey:'klic26', sortDir:-1, selected:null };
+let state = { metric: 'klic26', band: null, dcu:'', sbu:'', prog:'', q:'', sortKey:'klic26', sortDir:-1, selected:null };
 
 function renderYearHeader(){
   const row = document.getElementById('yearSubRow');
@@ -507,6 +520,7 @@ function filteredExceptBand(){
   return ALCS.filter(a=>{
     if(!eligibleForMetric(a)) return false;
     if(state.dcu && a.dcu!==state.dcu) return false;
+    if(state.sbu && a.sbu!==state.sbu) return false;
     if(state.prog && a.prog!==state.prog) return false;
     if(state.q){
       const q = state.q.toLowerCase();
@@ -514,6 +528,30 @@ function filteredExceptBand(){
     }
     return true;
   });
+}
+
+function sbuOptionsForCurrentFilters(){
+  const set = new Set();
+  ALCS.forEach(a=>{
+    if(!eligibleForMetric(a)) return;
+    if(state.dcu && a.dcu!==state.dcu) return;
+    if(state.prog && a.prog!==state.prog) return;
+    if(state.q){
+      const q = state.q.toLowerCase();
+      if(a.name.toLowerCase().indexOf(q)===-1 && (a.village||'').toLowerCase().indexOf(q)===-1 && a.code.toLowerCase().indexOf(q)===-1) return;
+    }
+    if(a.sbu) set.add(a.sbu);
+  });
+  return Array.from(set).sort();
+}
+
+function renderSbuFilter(){
+  const options = sbuOptionsForCurrentFilters();
+  if(state.sbu && options.indexOf(state.sbu)===-1){ state.sbu = ''; }
+  const sel = document.getElementById('sbuFilter');
+  const current = state.sbu;
+  sel.innerHTML = '<option value="">All SBUs</option>' +
+    options.map(s=>`<option value="${s}"${s===current?' selected':''}>${s}</option>`).join('');
 }
 
 function bandCounts(){
@@ -547,6 +585,7 @@ function renderDcuButtons(){
     counts[d] = ALCS.filter(a=>{
       if(!eligibleForMetric(a)) return false;
       if(d!=='' && a.dcu!==d) return false;
+      if(state.sbu && a.sbu!==state.sbu) return false;
       if(state.prog && a.prog!==state.prog) return false;
       if(state.q){
         const q = state.q.toLowerCase();
@@ -561,6 +600,7 @@ function renderDcuButtons(){
   wrap.querySelectorAll('.metric-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       state.dcu = btn.getAttribute('data-dcu');
+      state.sbu = '';
       refresh();
     });
   });
@@ -599,6 +639,7 @@ function filtered(){
     if(!eligibleForMetric(a)) return false;
     if(state.band!==null && bandOf(a[state.metric])!==state.band) return false;
     if(state.dcu && a.dcu!==state.dcu) return false;
+    if(state.sbu && a.sbu!==state.sbu) return false;
     if(state.prog && a.prog!==state.prog) return false;
     if(state.q){
       const q = state.q.toLowerCase();
@@ -651,7 +692,7 @@ function renderTable(){
   renderSummary(list);
   const body = document.getElementById('tableBody');
   if(list.length===0){
-    body.innerHTML = '<tr><td colspan="17"><div class="empty-state">No ALCs match this filter.</div></td></tr>';
+    body.innerHTML = '<tr><td colspan="18"><div class="empty-state">No ALCs match this filter.</div></td></tr>';
     return;
   }
   body.innerHTML = list.map(a=>{
@@ -660,6 +701,7 @@ function renderTable(){
       <td>${a.code}</td>
       <td class="sticky-col">${a.name}</td>
       <td>${a.dcu}</td>
+      <td>${a.sbu||'&ndash;'}</td>
       <td>${a.village||'&ndash;'}</td>
       <td>${a.taluka}</td>
       <td>${a.cat}</td>
@@ -851,6 +893,7 @@ function renderNearby(a){
 }
 
 document.getElementById('progFilter').addEventListener('change', e=>{ state.prog = e.target.value; refresh(); });
+document.getElementById('sbuFilter').addEventListener('change', e=>{ state.sbu = e.target.value; refresh(); });
 document.getElementById('searchBox').addEventListener('input', e=>{ state.q = e.target.value; refresh(); });
 document.getElementById('closeDetail').addEventListener('click', closeModal);
 document.getElementById('modalBackdrop').addEventListener('click', e=>{
@@ -869,6 +912,7 @@ document.querySelectorAll('#alcTable thead th[data-key]').forEach(th=>{
 
 function refresh(){
   renderDcuButtons();
+  renderSbuFilter();
   renderMetricToggle();
   renderBandButtons();
   renderTable();
