@@ -84,6 +84,8 @@
   .metric-btn{flex:1; padding:7px 0; border:none; background:#fff; color:var(--charcoal-2); font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;}
   .metric-btn + .metric-btn{border-left:1px solid var(--line);}
   .metric-btn.active{background:var(--saffron); color:#fff;}
+  .export-btn{background:var(--saffron); color:#fff; border:1px solid var(--saffron-dark); border-radius:6px; padding:8px 16px; font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap; height:fit-content;}
+  .export-btn:hover{background:var(--saffron-dark);}
   .metric-btn:hover:not(.active){background:var(--cream-2);}
   select, input[type=text]{
     width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px;
@@ -239,14 +241,17 @@
   <main>
     <div class="top-bar">
       <div class="summary-row" id="summaryRow"></div>
-      <div class="filter-group" style="margin-bottom:0; min-width:170px;">
-        <h3>Program</h3>
-        <select id="progFilter">
-          <option value="">All programs</option>
-          <option value="MS-CIT + KLiC">MS-CIT + KLiC</option>
-          <option value="MS-CIT">MS-CIT only</option>
-          <option value="KLiC only">KLiC only</option>
-        </select>
+      <div style="display:flex; gap:12px; align-items:flex-end;">
+        <div class="filter-group" style="margin-bottom:0; min-width:170px;">
+          <h3>Program</h3>
+          <select id="progFilter">
+            <option value="">All programs</option>
+            <option value="MS-CIT + KLiC">MS-CIT + KLiC</option>
+            <option value="MS-CIT">MS-CIT only</option>
+            <option value="KLiC only">KLiC only</option>
+          </select>
+        </div>
+        <button id="exportBtn" class="export-btn">Export CSV</button>
       </div>
     </div>
     <div class="legend-line">Year columns show <span class="m">MS-CIT</span> / <span class="k">KLiC</span> admissions for that year. 2026 column is year-to-date. Click any row to open its full profile.</div>
@@ -677,6 +682,57 @@ function sortList(list){
   });
 }
 
+function csvEscape(v){
+  if(v===null || v===undefined) v = '';
+  v = String(v);
+  if(/[",\n]/.test(v)){ v = '"' + v.replace(/"/g,'""') + '"'; }
+  return v;
+}
+
+function exportCSV(){
+  const list = sortList(filtered());
+  const headers = ['Center Code','Center Name','DCU','SBU','Village','Taluka','Category','Program'];
+  HIST_YEARS.forEach(y=>{ headers.push('MS-CIT '+y); headers.push('KLiC '+y); });
+  headers.push('MS-CIT 2026 (YTD)');
+  headers.push('KLiC 2026 (YTD)');
+  headers.push((state.metric==='klic26'?'KLiC':'MS-CIT') + ' Band');
+
+  const rows = [headers];
+  list.forEach(a=>{
+    const row = [a.code, a.name, a.dcu, a.sbu||'', a.village||'', a.taluka, a.cat, a.prog];
+    for(let i=0;i<HIST_YEARS.length;i++){
+      row.push(a.mscit_hist[i]===null||a.mscit_hist[i]===undefined ? '' : a.mscit_hist[i]);
+      row.push(a.klic_hist[i]===null||a.klic_hist[i]===undefined ? '' : a.klic_hist[i]);
+    }
+    row.push(a.mscit26===null||a.mscit26===undefined ? '' : a.mscit26);
+    row.push(a.klic26===null||a.klic26===undefined ? '' : a.klic26);
+    row.push(bandOf(a[state.metric]));
+    rows.push(row);
+  });
+
+  const csvText = rows.map(r=>r.map(csvEscape).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csvText], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+
+  const parts = ['ALC_export'];
+  parts.push(state.metric==='klic26' ? 'KLiC' : 'MSCIT');
+  if(state.dcu) parts.push(state.dcu.replace(/\s+/g,''));
+  if(state.sbu) parts.push(state.sbu.replace(/\s+/g,''));
+  if(state.prog) parts.push(state.prog.replace(/[^a-zA-Z0-9]+/g,''));
+  if(state.band) parts.push('band-'+state.band.replace(/[^0-9a-zA-Z-]/g,''));
+  const stamp = new Date().toISOString().slice(0,10);
+  parts.push(stamp);
+  const filename = parts.join('_') + '.csv';
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function yearCellsHtml(a){
   let html = '';
   for(let i=0;i<HIST_YEARS.length;i++){
@@ -894,6 +950,7 @@ function renderNearby(a){
 
 document.getElementById('progFilter').addEventListener('change', e=>{ state.prog = e.target.value; refresh(); });
 document.getElementById('sbuFilter').addEventListener('change', e=>{ state.sbu = e.target.value; refresh(); });
+document.getElementById('exportBtn').addEventListener('click', exportCSV);
 document.getElementById('searchBox').addEventListener('input', e=>{ state.q = e.target.value; refresh(); });
 document.getElementById('closeDetail').addEventListener('click', closeModal);
 document.getElementById('modalBackdrop').addEventListener('click', e=>{
