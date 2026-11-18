@@ -239,6 +239,10 @@
       <div id="urButtons" class="metric-toggle" style="flex-wrap:wrap;"></div>
     </div>
     <div class="filter-group">
+      <h3>Renewal 2027</h3>
+      <div id="renButtons" class="metric-toggle" style="flex-wrap:wrap;"></div>
+    </div>
+    <div class="filter-group">
       <h3>Metric</h3>
       <div id="metricToggle" class="metric-toggle"></div>
     </div>
@@ -635,7 +639,7 @@ function groupOrder(){ return state.metric==='renewal' ? REN_ORDER : BAND_ORDER;
 function groupClass(g){ return state.metric==='renewal' ? renChipClass(g) : bandClass(g); }
 function metricLabel(){ return state.metric==='klic26' ? 'KLiC' : (state.metric==='mscit26' ? 'MS-CIT' : 'Renewal'); }
 
-let state = { metric: 'klic26', band: null, dcu:'', sbu:'', prog:'', ur:'', q:'', sortKey:'klic26', sortDir:-1, selected:null };
+let state = { metric: 'klic26', band: null, dcu:'', sbu:'', prog:'', ur:'', ren:'', q:'', sortKey:'klic26', sortDir:-1, selected:null };
 
 function renderYearHeader(){
   const row = document.getElementById('yearSubRow');
@@ -651,6 +655,7 @@ function filteredExceptBand(){
     if(state.sbu && a.sbu!==state.sbu) return false;
     if(state.prog && a.prog!==state.prog) return false;
     if(state.ur && a.ur!==state.ur) return false;
+    if(state.ren && a.ren_status!==state.ren) return false;
     if(state.q){
       const q = state.q.toLowerCase();
       if(a.name.toLowerCase().indexOf(q)===-1 && (a.village||'').toLowerCase().indexOf(q)===-1 && a.code.toLowerCase().indexOf(q)===-1) return false;
@@ -666,6 +671,7 @@ function sbuOptionsForCurrentFilters(){
     if(state.dcu && a.dcu!==state.dcu) return;
     if(state.prog && a.prog!==state.prog) return;
     if(state.ur && a.ur!==state.ur) return;
+    if(state.ren && a.ren_status!==state.ren) return;
     if(state.q){
       const q = state.q.toLowerCase();
       if(a.name.toLowerCase().indexOf(q)===-1 && (a.village||'').toLowerCase().indexOf(q)===-1 && a.code.toLowerCase().indexOf(q)===-1) return;
@@ -705,6 +711,21 @@ function renderUrButtons(){
   });
 }
 
+function renderRenButtons(){
+  const wrap = document.getElementById('renButtons');
+  const opts = ['', 'Renewed', 'Not renewed'];
+  const saved = state.ren;
+  const counts = {};
+  opts.forEach(s=>{ state.ren = s; counts[s] = filteredExceptBand().length; });
+  state.ren = saved;
+  wrap.innerHTML = opts.map(s=>
+    `<button class="metric-btn${state.ren===s?' active':''}" data-ren="${s}">${s===''?'All':s} <span style="opacity:.75;">(${counts[s]})</span></button>`
+  ).join('');
+  wrap.querySelectorAll('.metric-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ state.ren = btn.getAttribute('data-ren'); refresh(); });
+  });
+}
+
 function renderMetricToggle(){
   const wrap = document.getElementById('metricToggle');
   const metrics = [{key:'klic26', label:'KLiC'}, {key:'mscit26', label:'MS-CIT'}, {key:'renewal', label:'Renewal'}];
@@ -733,6 +754,7 @@ function renderDcuButtons(){
       if(state.sbu && a.sbu!==state.sbu) return false;
       if(state.prog && a.prog!==state.prog) return false;
     if(state.ur && a.ur!==state.ur) return false;
+    if(state.ren && a.ren_status!==state.ren) return false;
       if(state.q){
         const q = state.q.toLowerCase();
         if(a.name.toLowerCase().indexOf(q)===-1 && (a.village||'').toLowerCase().indexOf(q)===-1 && a.code.toLowerCase().indexOf(q)===-1) return false;
@@ -788,6 +810,7 @@ function filtered(){
     if(state.sbu && a.sbu!==state.sbu) return false;
     if(state.prog && a.prog!==state.prog) return false;
     if(state.ur && a.ur!==state.ur) return false;
+    if(state.ren && a.ren_status!==state.ren) return false;
     if(state.q){
       const q = state.q.toLowerCase();
       if(a.name.toLowerCase().indexOf(q)===-1 && (a.village||'').toLowerCase().indexOf(q)===-1 && a.code.toLowerCase().indexOf(q)===-1) return false;
@@ -873,6 +896,7 @@ function exportCSV(){
   const parts = ['ALC_export'];
   parts.push(state.metric==='klic26' ? 'KLiC' : (state.metric==='mscit26' ? 'MSCIT' : 'Renewal'));
   if(state.ur) parts.push(state.ur);
+  if(state.ren) parts.push(state.ren.replace(/\s+/g,''));
   if(state.dcu) parts.push(state.dcu.replace(/\s+/g,''));
   if(state.sbu) parts.push(state.sbu.replace(/\s+/g,''));
   if(state.prog) parts.push(state.prog.replace(/[^a-zA-Z0-9]+/g,''));
@@ -1153,6 +1177,7 @@ function refresh(){
   computeRenewals();
   renderDcuButtons();
   renderUrButtons();
+  renderRenButtons();
   renderSbuFilter();
   renderMetricToggle();
   renderBandButtons();
